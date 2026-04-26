@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Text, Html } from '@react-three/drei';
+import { Text, Html, PositionalAudio } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AppInstance } from '../../types';
 import { useDepthOSStore } from '../../stores/depthOSStore';
@@ -33,6 +33,8 @@ const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
           occlude
           distanceFactor={1}
           position={[0, 0, 0.02]}
+          // Stable key based on app ID to persist iframe during drags
+          key={`iframe-${app.id}`}
           style={{
             width: `${app.scale.x * 400}px`,
             height: `${app.scale.y * 400}px`,
@@ -66,7 +68,7 @@ const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
               textAlign: 'center',
               pointerEvents: 'none'
             }}>
-              Note: Some sites block 3D embedding.
+              Note: Some sites block 3D embedding. Use ↗ to open directly.
             </div>
           </div>
         </Html>
@@ -143,6 +145,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
   const [hovered, setHovered] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const { camera, raycaster, mouse } = useThree();
   const dragOffset = useRef(new THREE.Vector3());
   const currentZ = useRef(app.position.z);
@@ -269,6 +272,27 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
     }
   };
 
+  // Mock File system access for 3D Drop
+  useEffect(() => {
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDropTarget(false);
+      if (e.dataTransfer?.files.length) {
+        const file = e.dataTransfer.files[0];
+        alert(`File "${file.name}" dropped into ${app.name}. Depth OS is processing...`);
+        // Here you would integrate the File System Access API
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      // This is tricky with R3F overlay, usually handled via Html component
+    };
+
+    // We can't easily listen to global drag events for specific 3D objects 
+    // without a bridge, so we'll implement the drop zone in the Html layer if needed.
+  }, [app.name]);
+
   if (!app.position || !app.scale) return null;
 
   return (
@@ -277,6 +301,17 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
       position={[app.position.x, app.position.y, app.position.z]}
       rotation={[app.rotation?.x || 0, app.rotation?.y || 0, app.rotation?.z || 0]}
     >
+      {/* Spatial Audio - App sound originates from its 3D position */}
+      {isThisFocused && (
+        <Suspense fallback={null}>
+          <PositionalAudio
+            url="/sounds/app-focus.mp3" // Mock sound
+            distance={5}
+            loop={false}
+          />
+        </Suspense>
+      )}
+
       {/* Window Title Bar (Drag area) */}
       <mesh 
         position={[0, app.scale.y / 2 + 0.1, 0]}
@@ -341,6 +376,8 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
           opacity={app.isMinimized ? 0.2 : 1}
           emissive={isThisFocused ? app.color : '#000000'}
           emissiveIntensity={isThisFocused ? 0.3 : 0}
+          // Visual cue for file drop
+          wireframe={isDropTarget}
         />
       </mesh>
 
