@@ -112,6 +112,7 @@ export interface AppSettings {
   autoSave: boolean;
   showFPS: boolean;
   ambientVolume: number;
+  gridSnapping: boolean;
 }
 
 export interface PostProcessingSettings {

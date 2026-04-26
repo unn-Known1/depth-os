@@ -50,6 +50,7 @@ const defaultSettings: AppSettings = {
   autoSave: true,
   showFPS: false,
   ambientVolume: 0.5,
+  gridSnapping: true,
 };
 
 const defaultPostProcessing: PostProcessingSettings = {
@@ -467,7 +468,43 @@ export const useDepthOSStore = create<DepthOSStore>()(
         get().selectApp(apps[nextIndex].id);
       },
 
-      moveApp: (id, position) => get().updateApp(id, { position }),
+      moveApp: (id, position) => {
+        const { settings, workspaces, activeWorkspaceId } = get();
+        let newPos = { ...position };
+
+        // Grid snapping
+        if (settings.gridSnapping) {
+          const gridSize = 0.5;
+          newPos.x = Math.round(newPos.x / gridSize) * gridSize;
+          newPos.y = Math.round(newPos.y / gridSize) * gridSize;
+          newPos.z = Math.round(newPos.z / gridSize) * gridSize;
+        }
+
+        // Basic collision/occlusion prevention
+        const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
+        const otherApps = (workspace?.apps || []).filter((a) => a.id !== id && !a.isMinimized);
+        const thisApp = (workspace?.apps || []).find((a) => a.id === id);
+
+        if (thisApp) {
+          for (const other of otherApps) {
+            const dx = Math.abs(newPos.x - other.position.x);
+            const dy = Math.abs(newPos.y - other.position.y);
+            const dz = Math.abs(newPos.z - other.position.z);
+            
+            // If very close in all axes, nudge slightly
+            const minX = (thisApp.scale.x + other.scale.x) / 2;
+            const minY = (thisApp.scale.y + other.scale.y) / 2;
+            const minZ = 0.2; // Windows are thin
+
+            if (dx < minX * 0.8 && dy < minY * 0.8 && dz < minZ) {
+              // Collision detected, keep old depth or nudge
+              newPos.z += 0.21; // Push forward slightly
+            }
+          }
+        }
+
+        get().updateApp(id, { position: newPos });
+      },
 
       resizeApp: (id, scale) => get().updateApp(id, { scale }),
 

@@ -136,6 +136,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
     focusedAppId, 
     removeApp, 
     moveApp,
+    resizeApp,
     updateApp
   } = useDepthOSStore();
   
@@ -144,6 +145,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
   const [resizing, setResizing] = useState(false);
   const { camera, raycaster, mouse } = useThree();
   const dragOffset = useRef(new THREE.Vector3());
+  const currentZ = useRef(app.position.z);
 
   const isThisFocused = focusedAppId === app.id && isFocused;
 
@@ -155,20 +157,20 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
           app.position.y + Math.sin(state.clock.elapsedTime * 0.5 + app.position.x) * 0.05;
       }
       
-      const targetScale = hovered === 'window' ? 1.02 : 1;
+      const targetScale = (hovered === 'window' || hovered?.startsWith('resize')) ? 1.02 : 1;
       meshRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
     }
 
     // Dragging logic
     if (dragging && meshRef.current) {
       raycaster.setFromCamera(mouse, camera);
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -app.position.z);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -currentZ.current);
       const target = new THREE.Vector3();
       raycaster.ray.intersectPlane(plane, target);
       
       if (target) {
         const newPos = target.sub(dragOffset.current);
-        meshRef.current.position.set(newPos.x, newPos.y, app.position.z);
+        meshRef.current.position.set(newPos.x, newPos.y, currentZ.current);
       }
     }
 
@@ -180,11 +182,19 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
       raycaster.ray.intersectPlane(plane, target);
       
       if (target) {
-        // Calculate new scale based on distance from window center
-        const newWidth = Math.max(1.5, Math.abs(target.x - app.position.x) * 2);
-        const newHeight = Math.max(1, Math.abs(target.y - app.position.y) * 2);
+        let newWidth = Math.max(1.5, Math.abs(target.x - app.position.x) * 2);
+        let newHeight = Math.max(1, Math.abs(target.y - app.position.y) * 2);
         
-        // Use updateApp for immediate visual feedback
+        // Aspect ratio locking for specific apps
+        if (app.name === 'YouTube' || app.name === 'Music Player') {
+          const ratio = app.scale.x / app.scale.y;
+          if (newWidth / newHeight > ratio) {
+            newHeight = newWidth / ratio;
+          } else {
+            newWidth = newHeight * ratio;
+          }
+        }
+        
         updateApp(app.id, { scale: { x: newWidth, y: newHeight, z: app.scale.z } });
       }
     }
@@ -195,24 +205,33 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
     if (isThisFocused) return;
     
     setDragging(true);
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -app.position.z);
+    currentZ.current = app.position.z;
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -currentZ.current);
     const target = new THREE.Vector3();
     raycaster.setFromCamera(mouse, camera);
     raycaster.ray.intersectPlane(plane, target);
     dragOffset.current.copy(target).sub(new THREE.Vector3(app.position.x, app.position.y, app.position.z));
     
+    const handleWheel = (e: WheelEvent) => {
+      currentZ.current -= e.deltaY * 0.01;
+      currentZ.current = Math.min(5, Math.max(-20, currentZ.current));
+    };
+
     const handleDragEnd = () => {
       setDragging(false);
       if (meshRef.current) {
         moveApp(app.id, {
           x: meshRef.current.position.x,
           y: meshRef.current.position.y,
-          z: app.position.z
+          z: currentZ.current
         });
       }
       window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('wheel', handleWheel);
     };
+    
     window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('wheel', handleWheel);
   };
 
   const handleResizeStart = (e: any) => {
@@ -221,6 +240,9 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
     
     const handleResizeEnd = () => {
       setResizing(false);
+      if (meshRef.current) {
+        resizeApp(app.id, { x: app.scale.x, y: app.scale.y, z: app.scale.z });
+      }
       window.removeEventListener('mouseup', handleResizeEnd);
     };
     window.addEventListener('mouseup', handleResizeEnd);
@@ -286,7 +308,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
         <Text position={[0, 0, 0.01]} fontSize={0.08} color="white">×</Text>
       </group>
 
-      {/* External Link Button (New) */}
+      {/* External Link Button */}
       {app.url && (
         <group 
           position={[app.scale.x / 2 - 0.3, app.scale.y / 2 + 0.1, app.scale.z / 2 + 0.01]}
@@ -322,16 +344,24 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
         />
       </mesh>
 
-      {/* Resize Handle (Bottom Right) */}
-      <mesh 
-        position={[app.scale.x / 2, -app.scale.y / 2, app.scale.z / 2 + 0.01]}
-        onPointerDown={handleResizeStart}
-        onPointerOver={() => setHovered('resize')}
-        onPointerOut={() => setHovered(null)}
-      >
-        <boxGeometry args={[0.15, 0.15, 0.05]} />
-        <meshStandardMaterial color={hovered === 'resize' ? '#ffffff' : app.color} />
-      </mesh>
+      {/* Resize Handles (Corners) */}
+      {[
+        { pos: [app.scale.x / 2, -app.scale.y / 2, 0], id: 'br' },
+        { pos: [-app.scale.x / 2, -app.scale.y / 2, 0], id: 'bl' },
+        { pos: [app.scale.x / 2, app.scale.y / 2, 0], id: 'tr' },
+        { pos: [-app.scale.x / 2, app.scale.y / 2, 0], id: 'tl' },
+      ].map((handle) => (
+        <mesh 
+          key={handle.id}
+          position={[handle.pos[0], handle.pos[1], app.scale.z / 2 + 0.01]}
+          onPointerDown={handleResizeStart}
+          onPointerOver={() => setHovered(`resize-${handle.id}`)}
+          onPointerOut={() => setHovered(null)}
+        >
+          <boxGeometry args={[0.15, 0.15, 0.05]} />
+          <meshStandardMaterial color={hovered === `resize-${handle.id}` ? '#ffffff' : app.color} />
+        </mesh>
+      ))}
 
       {/* Window content */}
       {!app.isMinimized && (
