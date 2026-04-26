@@ -8,6 +8,7 @@ import { Clock3D } from './Clock3D';
 import { WeatherWidget3D, SystemWidget3D, CalendarWidget3D, NotesWidget3D } from './EnhancedWidgets';
 import { FPSCounter } from './PostProcessing';
 import { useDepthOSStore } from '../../stores/depthOSStore';
+import * as THREE from 'three';
 
 interface Scene3DProps {
   showStats?: boolean;
@@ -20,6 +21,21 @@ const LoadingFallback = () => {
       <meshStandardMaterial color="#6366f1" wireframe />
     </mesh>
   );
+};
+
+// Audio listener component to attach to the camera
+const AudioListener = () => {
+  const { camera } = useThree();
+  const [listener] = useState(() => new THREE.AudioListener());
+  
+  useEffect(() => {
+    camera.add(listener);
+    return () => {
+      camera.remove(listener);
+    };
+  }, [camera, listener]);
+  
+  return null;
 };
 
 const MiniMap: React.FC = () => {
@@ -129,6 +145,7 @@ export const Scene3D: React.FC<Scene3DProps> = () => {
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         dpr={dpr}
       >
+        <AudioListener />
         <AdaptiveDpr pixelated />
         <AdaptiveEvents />
         <Suspense fallback={<LoadingFallback />}>
