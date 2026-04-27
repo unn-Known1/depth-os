@@ -585,13 +585,17 @@ export const useDepthOSStore = create<DepthOSStore>()(
       updateWeatherData: (data) => set({ weatherData: data }),
 
       refreshWeather: () => {
+        // Get location from weather widget config, default to 'San Francisco'
+        const state = get();
+        const weatherWidget = state.workspaces.find(w => w.id === state.activeWorkspaceId)?.widgets?.find(w => w.type === 'weather');
+        const location = weatherWidget?.config?.location || 'San Francisco';
         const conditions: WeatherData['condition'][] = ['sunny', 'cloudy', 'rainy', 'snowy', 'stormy'];
         const data: WeatherData = {
           temperature: Math.floor(Math.random() * 30) + 10,
           condition: conditions[Math.floor(Math.random() * conditions.length)],
           humidity: Math.floor(Math.random() * 60) + 20,
           windSpeed: Math.floor(Math.random() * 30),
-          location: 'San Francisco',
+          location: location,
         };
         get().updateWeatherData(data);
       },
