@@ -613,18 +613,33 @@ export const useDepthOSStore = create<DepthOSStore>()(
         // Deep merge with null safety
         const defaultWorkspace = createDefaultWorkspace();
 
+        // CWE-400: Limit persisted state size to prevent memory exhaustion
+        const MAX_STATE_SIZE = 5 * 1024 * 1024; // 5MB limit
+        const persistedStr = JSON.stringify(persistedState);
+        if (persistedStr && persistedStr.length > MAX_STATE_SIZE) {
+          console.warn('Persisted state exceeds size limit, using default state');
+          return {
+            ...currentState,
+            workspaces: [defaultWorkspace],
+            activeWorkspaceId: defaultWorkspace.id,
+          };
+        }
+
         // Ensure workspaces array exists and each workspace has apps/widgets
         const persistedWorkspaces = persistedState?.workspaces?.map((w: any) => ({
           ...defaultWorkspace,
           ...w,
-          apps: w.apps || [],
-          widgets: w.widgets || [],
+          apps: (w.apps || []).slice(0, 50), // Limit apps per workspace
+          widgets: (w.widgets || []).slice(0, 50), // Limit widgets per workspace
         })) || [defaultWorkspace];
+
+        // Limit total workspaces
+        const limitedWorkspaces = persistedWorkspaces.slice(0, 20);
 
         return {
           ...currentState,
           ...persistedState,
-          workspaces: persistedWorkspaces,
+          workspaces: limitedWorkspaces,
         };
       },
     }
