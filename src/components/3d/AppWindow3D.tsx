@@ -9,19 +9,57 @@ interface AppWindow3DProps {
   app: AppInstance;
 }
 
+// Utility function to safely validate and sanitize URLs
+// Prevents XSS attacks through javascript: or data: URLs
+const sanitizeUrl = (url: string): string | null => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    // Only allow http and https protocols
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      console.warn(`Blocked unsafe URL protocol: ${parsed.protocol}`);
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    console.warn(`Invalid URL: ${url}`);
+    return null;
+  }
+};
+
 // App window content renderer
 const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
   const [loading, setLoading] = useState(true);
 
   // If the app has a URL and is an iframe type, render real content
   if (app.contentType === 'iframe' && app.url) {
+    // SECURITY: Validate URL before rendering iframe
+    const safeUrl = sanitizeUrl(app.url);
+
+    // If URL is invalid or unsafe, show warning instead of iframe
+    if (!safeUrl) {
+      return (
+        <group>
+          <mesh position={[0, 0, 0.01]}>
+            <planeGeometry args={[app.scale.x, app.scale.y]} />
+            <meshStandardMaterial color="#1a1a1a" />
+          </mesh>
+          <Text position={[0, 0, 0.03]} fontSize={0.1} color="#ff6b6b">
+            Blocked unsafe URL
+          </Text>
+          <Text position={[0, -0.15, 0.03]} fontSize={0.06} color="#888">
+            Only http/https allowed
+          </Text>
+        </group>
+      );
+    }
+
     return (
       <group>
         <mesh position={[0, 0, 0.01]}>
           <planeGeometry args={[app.scale.x, app.scale.y]} />
           <meshStandardMaterial color="#1a1a1a" />
         </mesh>
-        
+
         {loading && (
           <Text position={[0, 0, 0.03]} fontSize={0.1} color="white">
             Loading {app.name}...
@@ -46,7 +84,7 @@ const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
         >
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
             <iframe
-              src={app.url}
+              src={safeUrl}
               style={{
                 width: '100%',
                 height: '100%',
@@ -268,7 +306,13 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
   const handleOpenExternal = (e: any) => {
     e.stopPropagation();
     if (app.url) {
-      window.open(app.url, '_blank');
+      // SECURITY: Validate URL before opening externally
+      const safeUrl = sanitizeUrl(app.url);
+      if (safeUrl) {
+        window.open(safeUrl, '_blank');
+      } else {
+        console.warn('Blocked unsafe URL from opening externally');
+      }
     }
   };
 
