@@ -323,7 +323,7 @@ export const useDepthOSStore = create<DepthOSStore>()(
 
       createWorkspace: (name, themeId = 'cosmic') => {
         const newWorkspace: Workspace = {
-          id: `workspace-${Date.now()}`,
+          id: crypto.randomUUID(),
           name,
           environmentId: themeId,
           createdAt: new Date().toISOString(),
@@ -625,22 +625,41 @@ export const useDepthOSStore = create<DepthOSStore>()(
           };
         }
 
-        // Ensure workspaces array exists and each workspace has apps/widgets
-        const persistedWorkspaces = persistedState?.workspaces?.map((w: any) => ({
-          ...defaultWorkspace,
-          ...w,
-          apps: (w.apps || []).slice(0, 50), // Limit apps per workspace
-          widgets: (w.widgets || []).slice(0, 50), // Limit widgets per workspace
-        })) || [defaultWorkspace];
+        // CWE-20: Validate persisted state structure to prevent injection attacks
+        // Only accept objects with expected structure, reject unexpected fields
+        if (persistedState && typeof persistedState === 'object') {
+          // Validate each workspace has required structure
+          const persistedWorkspaces = (persistedState.workspaces || [])
+            .filter((w: any) => w && typeof w === 'object' && typeof w.id === 'string' && typeof w.name === 'string')
+            .map((w: any) => ({
+              id: String(w.id).substring(0, 100), // Sanitize ID length
+              name: String(w.name).substring(0, 200), // Sanitize name length
+              environmentId: ['cosmic', 'nebula', 'forest', 'sunset', 'midnight'].includes(w.environmentId)
+                ? w.environmentId
+                : 'cosmic',
+              createdAt: typeof w.createdAt === 'string' ? w.createdAt : new Date().toISOString(),
+              modifiedAt: typeof w.modifiedAt === 'string' ? w.modifiedAt : new Date().toISOString(),
+              apps: Array.isArray(w.apps) ? w.apps.slice(0, 50).filter((a: any) => a && typeof a === 'object') : [],
+              widgets: Array.isArray(w.widgets) ? w.widgets.slice(0, 50).filter((wgt: any) => wgt && typeof wgt === 'object') : [],
+              cameraState: typeof w.cameraState === 'object' ? w.cameraState : defaultCameraState,
+            }));
 
-        // Limit total workspaces
-        const limitedWorkspaces = persistedWorkspaces.slice(0, 20);
+          // Limit total workspaces
+          const limitedWorkspaces = persistedWorkspaces.length > 0
+            ? persistedWorkspaces.slice(0, 20)
+            : [defaultWorkspace];
 
-        return {
-          ...currentState,
-          ...persistedState,
-          workspaces: limitedWorkspaces,
-        };
+          return {
+            ...currentState,
+            workspaces: limitedWorkspaces,
+            activeWorkspaceId: persistedState.activeWorkspaceId || defaultWorkspace.id,
+            settings: persistedState.settings || currentState.settings,
+            postProcessing: persistedState.postProcessing || currentState.postProcessing,
+            onboardingComplete: persistedState.onboardingComplete ?? false,
+          };
+        }
+
+        return currentState;
       },
     }
   )
