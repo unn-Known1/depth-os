@@ -624,7 +624,6 @@ export const useDepthOSStore = create<DepthOSStore>()(
             activeWorkspaceId: defaultWorkspace.id,
           };
         }
-
         // CWE-20: Validate persisted state structure to prevent injection attacks
         // Only accept objects with expected structure, reject unexpected fields
         if (persistedState && typeof persistedState === 'object') {
