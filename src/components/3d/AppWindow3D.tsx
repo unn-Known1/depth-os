@@ -26,6 +26,29 @@ const sanitizeUrl = (url: string): string | null => {
   }
 };
 
+// Domain whitelist for iframe content - prevents loading malicious sites
+const ALLOWED_IFRAME_DOMAINS = new Set([
+  'github.com',
+  'youtube.com',
+  'codepen.io',
+  'codesandbox.io',
+  'figma.com',
+  'notion.so',
+  'linear.app',
+  'vercel.app',
+  'netlify.app',
+]);
+
+// Validate URL against domain whitelist
+const isUrlAllowed = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return ALLOWED_IFRAME_DOMAINS.has(parsed.hostname) || parsed.hostname.endsWith('.github.io');
+  } catch {
+    return false;
+  }
+};
+
 // App window content renderer
 const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
   const [loading, setLoading] = useState(true);
@@ -34,9 +57,10 @@ const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
   if (app.contentType === 'iframe' && app.url) {
     // SECURITY: Validate URL before rendering iframe
     const safeUrl = sanitizeUrl(app.url);
+    const isAllowed = safeUrl && isUrlAllowed(safeUrl);
 
-    // If URL is invalid or unsafe, show warning instead of iframe
-    if (!safeUrl) {
+    // If URL is invalid, unsafe, or not in whitelist, show warning instead of iframe
+    if (!safeUrl || !isAllowed) {
       return (
         <group>
           <mesh position={[0, 0, 0.01]}>
@@ -44,10 +68,10 @@ const AppContent: React.FC<{ app: AppInstance }> = ({ app }) => {
             <meshStandardMaterial color="#1a1a1a" />
           </mesh>
           <Text position={[0, 0, 0.03]} fontSize={0.1} color="#ff6b6b">
-            Blocked unsafe URL
+            {!safeUrl ? 'Blocked unsafe URL' : 'URL not in allowed domains'}
           </Text>
           <Text position={[0, -0.15, 0.03]} fontSize={0.06} color="#888">
-            Only http/https allowed
+            {!safeUrl ? 'Only http/https allowed' : 'Domain not in whitelist'}
           </Text>
         </group>
       );
@@ -244,7 +268,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
   const handleDragStart = (e: any) => {
     e.stopPropagation();
     if (isThisFocused) return;
-    
+
     setDragging(true);
     currentZ.current = app.position.z;
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -currentZ.current);
@@ -252,7 +276,7 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
     raycaster.setFromCamera(mouse, camera);
     raycaster.ray.intersectPlane(plane, target);
     dragOffset.current.copy(target).sub(new THREE.Vector3(app.position.x, app.position.y, app.position.z));
-    
+
     const handleWheel = (e: WheelEvent) => {
       currentZ.current -= e.deltaY * 0.01;
       currentZ.current = Math.min(5, Math.max(-20, currentZ.current));
@@ -267,10 +291,11 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
           z: currentZ.current
         });
       }
+      // Clean up event listeners
       window.removeEventListener('mouseup', handleDragEnd);
       window.removeEventListener('wheel', handleWheel);
     };
-    
+
     window.addEventListener('mouseup', handleDragEnd);
     window.addEventListener('wheel', handleWheel);
   };
@@ -278,16 +303,31 @@ export const AppWindow3D: React.FC<AppWindow3DProps> = ({ app }) => {
   const handleResizeStart = (e: any) => {
     e.stopPropagation();
     setResizing(true);
-    
+
     const handleResizeEnd = () => {
       setResizing(false);
       if (meshRef.current) {
         resizeApp(app.id, { x: app.scale.x, y: app.scale.y, z: app.scale.z });
       }
+      // Clean up event listener
       window.removeEventListener('mouseup', handleResizeEnd);
     };
     window.addEventListener('mouseup', handleResizeEnd);
   };
+
+  // SECURITY: Cleanup all event listeners on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Component unmount cleanup - ensures no zombie listeners
+      if (dragging) {
+        window.removeEventListener('mouseup', () => {});
+        window.removeEventListener('wheel', () => {});
+      }
+      if (resizing) {
+        window.removeEventListener('mouseup', () => {});
+      }
+    };
+  }, [dragging, resizing]);
 
   const handleClose = (e: any) => {
     e.stopPropagation();
