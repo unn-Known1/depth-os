@@ -625,13 +625,37 @@ export const useDepthOSStore = create<DepthOSStore>()(
           };
         }
 
+        // CWE-79: Sanitize persisted state to prevent XSS via LocalStorage injection
+        const sanitizeString = (str: any): string => {
+          if (typeof str !== 'string') return str;
+          return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#x27;');
+        };
+
+        const sanitizeWorkspace = (workspace: any) => {
+          if (!workspace) return defaultWorkspace;
+          return {
+            ...workspace,
+            id: workspace.id || defaultWorkspace.id,
+            name: sanitizeString(workspace.name) || defaultWorkspace.name,
+            environmentId: workspace.environmentId || 'cosmic',
+            createdAt: workspace.createdAt || defaultWorkspace.createdAt,
+            modifiedAt: workspace.modifiedAt || new Date().toISOString(),
+            apps: (workspace.apps || []).slice(0, 50).map((app: any) => ({
+              ...app,
+              name: sanitizeString(app.name) || 'Unnamed App',
+              url: app.url || null, // URLs need validation, not sanitization
+            })),
+            widgets: (workspace.widgets || []).slice(0, 50),
+          };
+        };
+
         // Ensure workspaces array exists and each workspace has apps/widgets
-        const persistedWorkspaces = persistedState?.workspaces?.map((w: any) => ({
-          ...defaultWorkspace,
-          ...w,
-          apps: (w.apps || []).slice(0, 50), // Limit apps per workspace
-          widgets: (w.widgets || []).slice(0, 50), // Limit widgets per workspace
-        })) || [defaultWorkspace];
+        const persistedWorkspaces = persistedState?.workspaces?.map(sanitizeWorkspace) || [defaultWorkspace];
 
         // Limit total workspaces
         const limitedWorkspaces = persistedWorkspaces.slice(0, 20);
